@@ -1,0 +1,45 @@
+#!/bin/bash
+#PBS -N 10
+#PBS -A jvb-000-ag
+#PBS -l walltime=23:00:00
+#PBS -l nodes=1:gpus=1
+#PBS -M rdz.sotelo@gmail.com
+#PBS -m bea
+#PBS -l feature=k80
+#PBS -t [1-10]%5
+#PBS -E 
+#PBS -e /scratch/jvb-000-aa/sotelo/results/blizzard/%J%I.err
+#PBS -o /scratch/jvb-000-aa/sotelo/results/blizzard/%J%I.out
+
+cd $SCRATCH/code
+
+PORT=${MOAB_JOBID//[^[:alnum:]]/} #Remove [] brackets
+
+FILE=$LSCRATCH/data/blizzard/tbptt_blizzard.hdf5
+mkdir $SCRATCH/results/blizzard/$PORT
+
+if [ -f $FILE ];
+then
+   echo "File $FILE exists."
+else
+   mkdir $LSCRATCH/data
+   mkdir $LSCRATCH/data/blizzard
+   cp $SCRATCH/data/blizzard/* $LSCRATCH/data/blizzard
+fi
+
+export RESULTS_DIR=$SCRATCH/results
+export THEANO_FLAGS=floatX=float32
+export FUEL_DATA_PATH=$LSCRATCH/data
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/scratch/jvb-000-aa/sotelo/local/cbin/lib
+
+cp play/models/blizzard/deep_l3.py ../results/blizzard/$PORT/model.py
+cp play/datasets/server/blizzard/l3.py ../results/blizzard/$PORT/dataset.py
+
+python play/datasets/server/blizzard/l3.py $PORT &
+SERVER_PID=$!
+
+THEANO_FLAGS=mode=FAST_RUN,device=gpu,floatX=float32 python play/models/blizzard/deep_l3.py $PORT 2> ../results/blizzard/$PORT/err.txt 1> ../results/blizzard/$PORT/out.txt &
+TRAINER_PID=$!
+
+wait $TRAINER_PID
+kill -9 $SERVER_PID

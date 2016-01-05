@@ -1,0 +1,38 @@
+#!/bin/bash
+#PBS -A jvb-000-ag
+#PBS -l walltime=23:30:00
+#PBS -l nodes=1:gpus=1
+#PBS -M rdz.sotelo@gmail.com
+#PBS -m bea
+#PBS -l feature=k80
+
+cd $SCRATCH/code
+
+PORT=$MOAB_JOBID
+FILE=$SCRATCH/data/blizzard/tbptt_blizzard.hdf5
+mkdir $SCRATCH/results/blizzard/$PORT
+
+if [ -f $FILE ];
+then
+   echo "File $FILE exists."
+else
+   mkdir $LSCRATCH/
+   mkdir $LSCRATCH/data
+   mkdir $LSCRATCH/data/blizzard
+   cp $SCRATCH/data/blizzard/* $LSCRATCH/data/blizzard
+fi
+
+export FUEL_DATA_PATH=$LSCRATCH/data
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/scratch/jvb-000-aa/sotelo/local/cbin/lib
+
+cp play/models/blizzard/deep_l0.py ../results/blizzard/$PORT/model.py
+cp play/datasets/server/blizzard/l0.py ../results/blizzard/$PORT/dataset.py
+
+python play/datasets/server/blizzard/l0.py $PORT &
+SERVER_PID=$!
+
+THEANO_FLAGS=mode=FAST_RUN,device=gpu,floatX=float32 python play/models/blizzard/deep_l0.py $PORT 2> ../results/blizzard/$PORT/err.txt 1> ../results/blizzard/$PORT/out.txt &
+TRAINER_PID=$!
+
+wait $TRAINER_PID
+kill -9 $SERVER_PID
