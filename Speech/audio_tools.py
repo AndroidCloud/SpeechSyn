@@ -3,12 +3,12 @@
 
 import numpy as np
 # Do numpy version check for  <= 1.9 ! Something crazy going on in 1.10
-if int(np.__version__.split(".")[1]) >= 10:
-    raise ValueError("Only numpy <= 1.9 currently supported! There is a "
-                     "numerical error in one of the numpy 1.10 routines. "
-                     "Hopefully this will be debugged an corrected soon. "
-                     "For the intrepid, the error can be seen by running"
-                     "run_phase_reconstruction()")
+#if int(np.__version__.split(".")[1]) >= 10:
+#    raise ValueError("Only numpy <= 1.9 currently supported! There is a "
+#                     "numerical error in one of the numpy 1.10 routines. "
+#                     "Hopefully this will be debugged an corrected soon. "
+#                     "For the intrepid, the error can be seen by running"
+#                     "run_phase_reconstruction()")
 from numpy.lib.stride_tricks import as_strided
 import scipy.signal as sg
 from scipy.cluster.vq import vq
@@ -21,6 +21,7 @@ import zipfile
 import tarfile
 import os
 import copy
+import wave
 try:
     import urllib.request as urllib  # for backwards compatibility
 except ImportError:
@@ -79,6 +80,57 @@ def fetch_sample_speech_tapestry():
     # file is stereo? - just choose one channel
     return fs, d
 
+def _wav2array(nchannels, sampwidth, data):
+    """data must be the string containing the bytes from the wav file."""
+    num_samples, remainder = divmod(len(data), sampwidth * nchannels)
+    if remainder > 0:
+        raise ValueError('The length of data is not a multiple of '
+                         'sampwidth * num_channels.')
+    if sampwidth > 4:
+        raise ValueError("sampwidth must not be greater than 4.")
+
+    if sampwidth == 3:
+        a = np.empty((num_samples, nchannels, 4), dtype=np.uint8)
+        raw_bytes = np.fromstring(data, dtype=np.uint8)
+        a[:, :, :sampwidth] = raw_bytes.reshape(-1, nchannels, sampwidth)
+        a[:, :, sampwidth:] = (a[:, :, sampwidth - 1:sampwidth] >> 7) * 255
+        result = a.view('<i4').reshape(a.shape[:-1])
+    else:
+        # 8 bit samples are stored as unsigned ints; others as signed ints.
+        dt_char = 'u' if sampwidth == 1 else 'i'
+        a = np.fromstring(data, dtype='<%s%d' % (dt_char, sampwidth))
+        result = a.reshape(-1, nchannels)
+    return result
+
+
+def readwav(file):
+    """
+    Read a wav file.
+    Returns the frame rate, sample width (in bytes) and a numpy array
+    containing the data.
+    This function does not read compressed wav files.
+    """
+    wav = wave.open(file)
+    rate = wav.getframerate()
+    nchannels = wav.getnchannels()
+    sampwidth = wav.getsampwidth()
+    nframes = wav.getnframes()
+    data = wav.readframes(nframes)
+    wav.close()
+    array = _wav2array(nchannels, sampwidth, data)
+    return sampwidth, array
+
+
+
+def fetch_sample_dataset(wav_path):
+    #url = "https://www.dropbox.com/s/qte66a7haqspq2g/tapestry.wav?dl=1"
+    if not os.path.exists(wav_path):
+        download(url, wav_path)
+    fs, d = wavfile.read(wav_path)
+#   fs, d = readwav(wav_path)
+    d = d.astype('float32') / (2 ** 15)
+    # file is stereo? - just choose one channel
+    return fs, d
 
 def fetch_sample_music():
     url = "http://www.music.helsinki.fi/tmt/opetus/uusmedia/esim/"
@@ -1757,8 +1809,12 @@ def run_dct_vq_example():
     wavfile.write("dct_vq_test_agc.wav", fs, soundsc(agc_vq_d2))
 
 
+
+
 def run_phase_reconstruction_example():
-    fs, d = fetch_sample_speech_tapestry()
+#    fs, d = fetch_sample_speech_tapestry()
+#    fs, d = fetch_sample_music()
+    fs, d = fetch_sample_dataset('./Blizzard_Mic_Spectators_Cheer_Boo.wav')
     # actually gives however many components you say! So double what .m file
     # says
     fftsize = 512
@@ -1846,9 +1902,9 @@ if __name__ == "__main__":
     Trying to run all examples will seg fault on my laptop - probably memory!
     Comment individually
     """
-    # run_phase_reconstruction_example()
-    run_phase_vq_example()
+    run_phase_reconstruction_example()
+    #run_phase_vq_example()
     # run_dct_vq_example()
     # run_fft_vq_example()
     # run_lpc_example()
-    test_all()
+    #test_all()
